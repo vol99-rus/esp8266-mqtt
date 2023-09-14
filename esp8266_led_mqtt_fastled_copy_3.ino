@@ -1,6 +1,8 @@
 #include <FastLED.h>
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
+#include <ESP8266mDNS.h>
+#include <ArduinoOTA.h>
 
 // Настройки сети Wi-Fi
 const char* ssid = "";
@@ -32,7 +34,6 @@ char msg[MSG_BUFFER_SIZE];
 int value = 0;
 
 void setup_wifi() {
-
   delay(10);
   // We start by connecting to a WiFi network
   Serial.println();
@@ -43,12 +44,11 @@ void setup_wifi() {
   WiFi.begin(ssid, password);
 
   while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
+    delay(5000);
     Serial.print(".");
+    // ESP.restart();
   }
-
   randomSeed(micros());
-
   Serial.println("");
   Serial.println("WiFi connected");
   Serial.println("IP address: ");
@@ -132,13 +132,15 @@ void callback(char* topic, byte* payload, unsigned int length) {
 }
 
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(115200);
+  WiFi.mode(WIFI_STA);
+  
   // Инициализация светодиодной ленты
   byte BRIGHTNESS = 96;
   FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS);
-  FastLED.setBrightness(BRIGHTNESS);
-  setAllLedsColor("#FFFFFF");
-  FastLED.show();
+  // FastLED.setBrightness(BRIGHTNESS);
+  // setAllLedsColor("#FFFFFF");
+  // FastLED.show();
 
    // Настройка пина на выход
   pinMode(RELAY_PIN, OUTPUT);
@@ -149,12 +151,32 @@ void setup() {
   // Подключение к Wi-Fi сети
   setup_wifi();
 
+  // Инициализация OTA
+  ArduinoOTA.onStart([]() {
+    Serial.println("Начало обновления...");
+  });
+  ArduinoOTA.onEnd([]() {
+    Serial.println("\nОбновление завершено.");
+  });
+  ArduinoOTA.onError([](ota_error_t error) {
+    Serial.printf("Ошибка обновления[%u]: ", error);
+    if (error == OTA_AUTH_ERROR) Serial.println("Ошибка аутентификации");
+    else if (error == OTA_BEGIN_ERROR) Serial.println("Ошибка начала обновления");
+    else if (error == OTA_CONNECT_ERROR) Serial.println("Ошибка подключения");
+    else if (error == OTA_RECEIVE_ERROR) Serial.println("Ошибка приема");
+    else if (error == OTA_END_ERROR) Serial.println("Ошибка завершения обновления");
+  });
+
+  ArduinoOTA.begin();
+
   // Подключение к MQTT брокеру
   mqttClient.setServer(mqttServer, mqttPort);
   mqttClient.setCallback(callback);
 }
 
 void loop() {
+  ArduinoOTA.handle(); // Обработка событий OTA
+  
   // Проверка статуса подключения к MQTT брокеру
   if (!mqttClient.connected()) {
     reconnectToMqttBroker();
@@ -165,13 +187,12 @@ void loop() {
   if (now - lastMsg > 60000) {
     lastMsg = now;
     ++value;
-    snprintf (msg, MSG_BUFFER_SIZE, "hello world #%ld", value);
+    snprintf (msg, MSG_BUFFER_SIZE, "start time %ld min", value);
     Serial.print("Publish message: ");
     Serial.println(msg);
     mqttClient.publish("testTopic", msg);
   }
 }
-
 
 //эффекты
 //Rainbow Cycle (Цикл радуги):
